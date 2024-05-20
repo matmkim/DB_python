@@ -299,10 +299,11 @@ def evaluate_expression(record, column_names, where):
 def select(myDB, table_name, select_column, where):
     metadata=[]
     for table in table_name:
-        metadata.append(load_metadata(myDB, table))
-        if metadata is None:
+        load = load_metadata(myDB, table)
+        if load is None:
             print(prompt_header+f"Selection has failed: '{table}' does not exist")
             return
+        metadata.extend(load)
     print("|"+"-------------------------|"*len(metadata))
     print("|",end='')
     for x in metadata:
@@ -315,14 +316,16 @@ def select(myDB, table_name, select_column, where):
     while x:=cursor.next():
         cnt+=1
         key, value = x
-        if key.decode().startswith(table_name):
-            print("|",end='')
-            for x in value.decode().split("@"):
-                y=x
-                if y[0] == "'" or y[0] == "\"": y = y[1:]
-                if y[-1] == "'" or y[-1] == "\"": y = y[:-1]
-                print(f"{y.ljust(25)}",end ='|')
-            print()
+        for name in table_name:
+            if key.decode().startswith(name):
+                print("|",end='')
+                for x in value.decode().split("@"):
+                    y=x
+                    if y[0] == "'" or y[0] == "\"": y = y[1:]
+                    if y[-1] == "'" or y[-1] == "\"": y = y[:-1]
+                    print(f"{y.ljust(25)}",end ='|')
+                print()
+
     if cnt==0: print()
     print("|"+"-------------------------|"*len(metadata))
 
