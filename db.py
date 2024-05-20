@@ -175,6 +175,8 @@ def insert(myDB, table_name, column_name_list, values):
     table_column_name = [row.split("@")[0] for row in metadata]
     table_column_type = [row.split("@")[1] for row in metadata]
     column_null = [row.split("@")[2] for row in metadata]
+    key_constraint = [row.split("@")[3] for row in metadata]
+    referentials = [row.split("@")[4] for row in metadata]
 
     # sort the value in the order of table_column_name
     if column_name_list:
@@ -195,19 +197,59 @@ def insert(myDB, table_name, column_name_list, values):
                 values[i] = order_map[table_column_name[i]]
             else:
                 values[i] = "null"
-            if values[i] == "null" and column_null[i] == "N": 
-                #InsertColumnNonNullableError
-                print(prompt_header+f"Insertion has failed: '{table_column_name[i]}' is not nullable")
-                return
     else:
         if len(table_column_name)!=len(values):
             #InsertTypeMismatchError
             print(prompt_header+"Insertion has failed: Types are not matched")
             return 
     
+    for i in range(len(table_column_name)):
+        if referentials[i]:
+            ref_table, ref_attribute = referentials[i].split("=")
+            metadata = load_metadata(myDB, ref_table)
+            ref_table_column_name = [row.split("@")[0] for row in metadata]
+            ref_i = ref_table_column_name.index(ref_attribute)
+
+        if values[i] == "null" and column_null[i] == "N": 
+            #InsertColumnNonNullableError
+            print(prompt_header+f"Insertion has failed: '{table_column_name[i]}' is not nullable")
+            return
+        if key_constraint[i].startswith("PRI"):
+            cursor = myDB.cursor()
+            while x:= cursor.next():
+                key,value = x
+                if key.decode().split('@')[0]!= table_name:
+                    continue
+                value_decode = value.decode().split("@")
+                v_i, v_f = value_decode[i], values[i]
+                if v_i[0]=="'" or v_i[0]=="\"":
+                    v_i, v_f = v_i[1:-1], v_f[1:-1]
+                if v_i == v_f:
+                    # InsertDuplicatePrimaryKeyError
+                    print(prompt_header+"Insertion has failed: Primary key duplication")
+                    return
+        if key_constraint[i].endswith("FOR"):
+            exist = False
+            cursor = myDB.cursor()
+            while x:= cursor.next():
+                key,value = x
+                if key.decode().split('@')[0]!= ref_table:
+                    continue
+                value_decode = value.decode().split("@")
+                v_i, v_f = value_decode[ref_i], values[i]
+                if v_i[0]=="'" or v_i[0]=="\"":
+                    v_i, v_f = v_i[1:-1], v_f[1:-1]
+                if v_i == v_f:
+                    exist = True
+            if not exist:      
+                # InsertReferentialIntegrityError
+                print(prompt_header+"Insertion has failed: Referential integrity violation")
+                return
+        
 
     # for char type; if it is longer than the defined length, slice it
     for i in range(len(table_column_type)):
+        if values[i] == "null": continue
         if table_column_type[i].startswith("char"):
             if '"' not in values[i] and "'" not in values[i]: # not char
                 #InsertTypeMismatchError
@@ -234,25 +276,68 @@ def insert(myDB, table_name, column_name_list, values):
     myDB.put(key.encode(), compressed_values.encode())
     print(prompt_header+"1 row inserted")
 
+def check_referential(myDB, primary_values, primary_column, table_name):
+    cursor = myDB.cursor()
+    ref_table=[]
+    while x:= cursor.next():
+        key,value = x
+        if key.decode().startswith("__foreign__") and key.decode().endswith(table_name):
+            ref_table.append(key.decode().split("__")[2])
+    for table in ref_table:
+        cursor = myDB.cursor()
+        while x:= cursor.next():
+            key,value = x
+            if key.decode().split('@')[0]!= table:
+                continue
+            value_decode = value.decode().split("@")
+            v_i, v_f = value_decode[ref_i], values[i]
+            if v_i[0]=="'" or v_i[0]=="\"":
+                v_i, v_f = v_i[1:-1], v_f[1:-1]
+            if v_i == v_f:
+                raise Exception("ReferentialIntegrity")
+    
+
 def delete(myDB, table_name, where):
     cnt=0
     metadata = load_metadata(myDB, table_name)
-    table_column_name = [row.split("@")[0] for row in metadata]
-
     if metadata is None:
         print(prompt_header+"No such table")
         return
+    table_column_name = [row.split("@")[0] for row in metadata]
+    key_constraint = [row.split("@")[3] for row in metadata]
     
-    
+    primary_keys = []
+    primary_column = []
+    for i in range(table_column_name):
+        if key_constraint[i].startswith("PRI"):
+            primary_keys.append(i)
+            primary_column.append(table_column_name[i])
+
+    target=[]
+
     f_cursor = myDB.cursor()
-    while x:= f_cursor.next():
-        key,value = x
-        value_decode = value.decode().split("@")
-        if key.decode().startswith(table_name):
-            # Record of the tablex
-            if evaluate_expression(value_decode, table_column_name, where):
-                cnt+=1
-                myDB.delete(key)
+    try:
+        while x:= f_cursor.next():
+            key,value = x
+            value_decode = value.decode().split("@")
+
+            if key.decode().startswith(table_name):
+                # Record of the table
+                if evaluate_expression(value_decode, table_column_name, where):
+                    cnt+=1
+                    primary_values=[value_decode[i] for i in primary_keys]
+                    check_referential(myDB, primary_values, primary_column, table_name)
+                    target.append(key)
+        for key in target:
+            myDB.delete(key)
+    except Exception as e:
+        e = str(e)
+        if e == "IncomparableError":
+            print(prompt_header+"Where clause trying to compare incomparable values")
+        elif e == "ColumnNotExist":
+            print(prompt_header+"Where clause trying to reference non existing column")
+        return 
+
     
     print(prompt_header+f"{cnt} row(s) deleted")
 
@@ -261,8 +346,32 @@ def evaluate_boolean(record, column_names, test):
         column_name, operator1, operator2, value = test
         operator = operator1+" "+operator2
     else: column_name, operator, value = test
+
+    if column_name not in column_names:
+        raise Exception("ColumnNotExist")
+
     column_i = column_names.index(column_name)
     record_value = record[column_i]
+
+    # type valid test
+    if value[0].isalpha():
+        column_i = column_names.index(value)
+        value = record[column_i]
+    
+    if "'" in value or "\"" in value:
+        if "'" in record_value or "\"" in record_value:
+            record_value = record_value[1:-1]
+            value = value[1:-1]
+        else:
+            raise Exception("IncomparableError")
+    elif "-" in value:
+        if "-" not in record_value or "'" in record_value or "\"" in record_value:
+            raise Exception("IncomparableError")
+    elif value == "null":
+        pass
+    else:
+        if "-" in record_value or "'" in record_value or "\"" in record_value:
+            raise Exception("IncomparableError")
 
     if operator == '=':
         return record_value == value
@@ -280,11 +389,8 @@ def evaluate_boolean(record, column_names, test):
         return record_value == value
     elif operator =="is not":
         return record_value != value
-    else:
-        raise ValueError(f"Unsupported operator: {operator}")
 
 def evaluate_expression(record, column_names, where):
-    print(record)
     if not where:
         return True
     if len(where)==1:
@@ -294,40 +400,124 @@ def evaluate_expression(record, column_names, where):
     if where[1]=="or":
         return evaluate_boolean(record, column_names, where[0]) or evaluate_boolean(record, column_names, where[2])
 
+
+def select_all(myDB, table_name):
+    cursor = myDB.cursor()
+    records=[[] for i in range(len(table_name))]
+    while x:=cursor.next():
+        key, value = x
+        for i in range (len(table_name)):
+            if key.decode().startswith(table_name[i]):
+                records[i].append(value.decode().split("@"))
+    while len(records)>1:
+        joined_records=[]
+        for record1 in records[-1]:
+            if not record1: return False
+            for record2 in records[-2]:
+                if not record2: return False
+                joined_records.append(record2+record1)
+        records[-2]=joined_records
+        records.pop()
+    return records[0]
+
+
+def column_valid_test(table_name_list, metadata, columns):
+    converted_columns=[]
+    for column in columns:
+        if '.' in column:
+            if column in metadata:
+                converted_columns.append(column)
+            else:
+                if column.split(".")[0] not in table_name_list:
+                    raise Exception(f"TableNotSpecified@{column}")
+                raise Exception(f"ColumnNotExist@{column}")
+        else:
+            cnt=0
+            for x in metadata:
+                if x.split(".")[1] == column:
+                    cnt+=1
+                    converted_columns.append(x)
+            if cnt>1: 
+                raise Exception(f"AmbiguosReference@{column}")
+            if cnt==0:
+                raise Exception(f"ColumnNotExist@{column}")
+    return converted_columns
+
+def filter_record(joined_records, metadata, where, converted_columns):
+    filter_records=[]
+    for record in joined_records:
+        if evaluate_expression(record, metadata, where):
+            split_record=[]
+            for column in converted_columns:
+                split_record.append(record[metadata.index(column)])
+            filter_records.append(split_record)
     
+    return filter_records
+
 # print every inserted data in table format
-def select(myDB, table_name, select_column, where):
+def select(myDB, table_name_list, select_column, where):
     metadata=[]
-    for table in table_name:
+    for table in table_name_list:
         load = load_metadata(myDB, table)
         if load is None:
             print(prompt_header+f"Selection has failed: '{table}' does not exist")
             return
-        metadata.extend(load)
-    print("|"+"-------------------------|"*len(metadata))
-    print("|",end='')
-    for x in metadata:
-        column_name = x.split("@")[0]
-        print(f"{column_name.ljust(25)}",end='|')
-    print()
-    print("|"+"-------------------------|"*len(metadata))
-    cursor = myDB.cursor()
-    cnt=0
-    while x:=cursor.next():
-        cnt+=1
-        key, value = x
-        for name in table_name:
-            if key.decode().startswith(name):
-                print("|",end='')
-                for x in value.decode().split("@"):
-                    y=x
-                    if y[0] == "'" or y[0] == "\"": y = y[1:]
-                    if y[-1] == "'" or y[-1] == "\"": y = y[:-1]
-                    print(f"{y.ljust(25)}",end ='|')
-                print()
+        for i in range(len(load)):
+            load[i] = table+"."+load[i].split('@')[0]
 
-    if cnt==0: print()
-    print("|"+"-------------------------|"*len(metadata))
+        metadata.extend(load)    
+    
+    if not select_column: select_column=metadata
+    
+    try:
+        for x in where:
+            if type(x)==list:
+                converted_column_name =  column_valid_test(table_name_list, metadata, [x[0]])
+                x[0] = converted_column_name[0]
+                if len(x)==3 and x[2].isalpha():
+                    x[2] = column_valid_test(table_name_list, metadata, [x[2]])[0]
+
+    except Exception as e:
+        e = str(e).split("@")[0]
+        if e == "TableNotSpecified":
+            print(prompt_header+"Where clause trying to reference tables which are not specified")
+        elif e == "ColumnNotExist":
+            print(prompt_header+"Where clause trying to reference non existing column")
+        elif e == "AmbiguosReference":
+            print(prompt_header+"Where clause contains ambiguous reference")
+        return
+
+    try:
+        converted_columns = column_valid_test(table_name_list, metadata, select_column)
+    except Exception as e:
+        column = str(e).split("@")[1]
+        print(prompt_header+f"Selection has failed: fail to resolve '{column}")
+    
+    joined_records = select_all(myDB, table_name_list)
+    try:
+        filter_records = filter_record(joined_records, metadata, where, converted_columns)
+    except Exception as e:
+        e = str(e)
+        if e == "IncomparableError":
+            print(prompt_header+"Where clause trying to compare incomparable values")
+        return 
+
+    print("|"+"------------------------|"*len(converted_columns))
+    print("|",end='')
+    for x in select_column:
+        print(f"{x.ljust(24)}",end='|')
+    print()
+    print("|"+"------------------------|"*len(converted_columns))
+    
+    for record in filter_records:
+        print("|",end='')
+        for x in record:
+            y=x
+            if y[0] == "'" or y[0] == "\"": y = y[1:]
+            if y[-1] == "'" or y[-1] == "\"": y = y[:-1]
+            print(f"{y.ljust(24)}",end='|')
+        print()
+    print("|"+"------------------------|"*len(converted_columns))
 
 # made for debugging
 def print_db(myDB):

@@ -16,4 +16,5 @@ First you should install the requirements.
         >> pip install -r requirements.txt
 
 Execute below from the terminal:
+
         >> python run.py
