@@ -1,0 +1,56 @@
+create table students (
+id char(10) not null,
+name char(20),
+primary key(id)
+);
+
+create table lectures (
+id int not null,
+name char(20),
+capacity int,
+primary key(id)
+);
+
+create table ref(
+id int,
+foreign key (id) references lectures (id)
+);
+
+create table apply(
+s_id char(10) not null,
+I_id int not null,
+apply_date date,
+primary key (s_id, I_id),
+foreign key (s_id) references students(id),
+foreign key(I_id) references lectures(id)
+);
+
+insert into students values('202316728','Minwoo Kim');
+insert into students values (null,'Wonmin');
+insert into students(name , id) values ('Taehyun','202317289');
+insert into students values ('2025167280000000','Minsuh Kim');
+insert into customer values ('202316728' , 'Minwoo Kim');
+insert into lectures values (111, "Database", 30);
+insert into lectures values ("222", "Machine Learning", 20);
+insert into lectures values (444, "Data Stucture", 100);
+insert into lectures values(333, "Logic Design", 100);
+insert into students values ('202316728',"Minwoo Kim", 123);
+insert into students(abab, name) values ('202316728' , 'Minwoo Kim');
+insert into students (name) values ('2023 16728' , 'Minwoo Kim');
+insert into students values('202316729','Minwok Kim');
+insert into students values('202316730','Minji Shin');
+insert into students values('202316731','Minki Kim');
+insert into students values('202316732','Minwoo Kim');
+
+select * from ref;
+select * from students;
+select * from lectures;
+insert into ref values (111);
+select * from ref;
+
+delete from lectures;
+delete from asd where id<3;
+delete from students where id >= '202316730' and name = "Minwoo Kim";
+delete from students where id = 100;
+delete from lectures where id = "111";
+delete from students where asd = '2023';
