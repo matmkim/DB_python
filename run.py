@@ -23,8 +23,14 @@ class SqlTransformer(Transformer):
     def select_query(self,items):
         
         column_name = list(map(lambda x: ".".join(x.scan_values(lambda v: isinstance(v,Token))),  list(items[1].find_data('selected_column'))))
-        table_name =  list(set(map(lambda x: "".join(x.scan_values(lambda v: isinstance(v,Token))),  list(items[2].find_data('table_name')))))
-        
+        table_name_i =  list(map(lambda x: "".join(x.scan_values(lambda v: isinstance(v,Token))),  list(items[2].find_data('table_name'))))
+
+        table_name=[]
+        for x in table_name_i:
+            if x not in table_name:
+                table_name.append(x)
+                
+        #parse where clause
         where=[]
         if items[2].find_data('where_clause'):
             tests = list(items[2].find_data("boolean_test"))
@@ -116,6 +122,8 @@ class SqlTransformer(Transformer):
     def delete_query(self,items):
         where=[]
         table_name= items[2].children[0].lower()
+
+        # parse where clause
         if items[3]:
             tests = list(items[3].find_data("boolean_test"))
             and_or = list(map(lambda x: x.value, list(items[3].scan_values(lambda v: isinstance(v,Token) and (v.type == "OR" or v.type == "AND")))))
@@ -153,14 +161,14 @@ while flag:
     # Parse line-by-line
     # input_lines[-1] is blank, beacuase of the right-most semicolon
     for input_line in input_lines[:-1]: 
-        #try:
-        output = sql_parser.parse(input_line.strip()+";") # parse
-        result = SqlTransformer().transform(output) # transform
-        '''except:
+        try:
+            output = sql_parser.parse(input_line.strip()+";") # parse
+            result = SqlTransformer().transform(output) # transform
+        except:
             # It means that syntax error occured
             print(prompt_header+'Syntax error') 
 
-            break # stop parsing next query'''
+            break # stop parsing next query
 
         if result=="exit": flag=False; break # end the program
 

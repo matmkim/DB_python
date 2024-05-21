@@ -59,7 +59,7 @@ select name from students;
 select students.name, lectures.name from students, lectures;
 select name from students, lectures;
 select asd from students, lectures;
-select lectures.id, name from lectures, ref where lectures.id = ref.id;
+select ref.id, name from lectures, ref where lectures.id = ref.id;
 select * from sasd;
 
 insert into students values ("202316729", "WhoamI");

@@ -172,6 +172,7 @@ def insert(myDB, table_name, column_name_list, values):
         print(prompt_header+"No such table")
         return
     
+    # extract each info from metadata
     table_column_name = [row.split("@")[0] for row in metadata]
     table_column_type = [row.split("@")[1] for row in metadata]
     column_null = [row.split("@")[2] for row in metadata]
@@ -190,6 +191,7 @@ def insert(myDB, table_name, column_name_list, values):
                 #InsertColumnExistenceError
                 print(prompt_header+f"Insertion has failed: '{column_name_list[i]}' does not exist")
                 return
+        # sort value order
         order_map = {column: values[i] for i, column in enumerate(column_name_list)} 
         values=[None]*len(table_column_name)
         for i in range(len(table_column_name)):
@@ -215,6 +217,7 @@ def insert(myDB, table_name, column_name_list, values):
             print(prompt_header+f"Insertion has failed: '{table_column_name[i]}' is not nullable")
             return
         if key_constraint[i].startswith("PRI"):
+            # check duplicate values
             cursor = myDB.cursor()
             while x:= cursor.next():
                 key,value = x
@@ -229,6 +232,7 @@ def insert(myDB, table_name, column_name_list, values):
                     print(prompt_header+"Insertion has failed: Primary key duplication")
                     return
         if key_constraint[i].endswith("FOR"):
+            # check if there is the reference
             exist = False
             cursor = myDB.cursor()
             while x:= cursor.next():
@@ -276,6 +280,8 @@ def insert(myDB, table_name, column_name_list, values):
     myDB.put(key.encode(), compressed_values.encode())
     print(prompt_header+"1 row inserted")
 
+# function to check for foreign key constraint during delete
+# find if there is a record referencing to primary_values
 def check_referential(myDB, primary_values, primary_column, table_name):
     cursor = myDB.cursor()
     ref_table=[]
@@ -285,13 +291,13 @@ def check_referential(myDB, primary_values, primary_column, table_name):
             ref_table.append(key.decode().split("__")[2])
     for table in ref_table:
         metadata = load_metadata(myDB, table)
-        table_column_name = [row.split("@")[0] for row in metadata]
         referentials = [row.split("@")[4] for row in metadata]
         index = []
         for attribute in primary_column:
             index.append(referentials.index(table_name+"="+attribute))
 
         cursor = myDB.cursor()
+        # if there is a record referencing to primary_values -> Error
         while x:= cursor.next():
             key,value = x
             if key.decode().split('@')[0]!= table:
@@ -317,6 +323,7 @@ def delete(myDB, table_name, where):
     table_column_name = [row.split("@")[0] for row in metadata]
     key_constraint = [row.split("@")[3] for row in metadata]
     
+    # extract primary keys
     primary_keys = []
     primary_column = []
     for i in range(len(table_column_name)):
@@ -325,7 +332,6 @@ def delete(myDB, table_name, where):
             primary_column.append(table_column_name[i])
 
     target=[]
-
     f_cursor = myDB.cursor()
     error = False
     try:
@@ -353,12 +359,13 @@ def delete(myDB, table_name, where):
         elif e == "ColumnNotExist":
             print(prompt_header+"Where clause trying to reference non existing column")
         return 
-
     
     print(prompt_header+f"{cnt} row(s) deleted")
 
+# function to calculate the result of the test for the record 
 def evaluate_boolean(record, column_names, test):
     if len(test)==4:
+        # 'is not' case
         column_name, operator1, operator2, value = test
         operator = operator1+" "+operator2
     else: column_name, operator, value = test
@@ -369,11 +376,11 @@ def evaluate_boolean(record, column_names, test):
     column_i = column_names.index(column_name)
     record_value = record[column_i]
 
-    # type valid test
+    # type valid tests
     if value[0].isalpha():
+        # value is the column
         column_i = column_names.index(value)
         value = record[column_i]
-    
     if "'" in value or "\"" in value:
         if "'" in record_value or "\"" in record_value:
             record_value = record_value[1:-1]
@@ -406,6 +413,7 @@ def evaluate_boolean(record, column_names, test):
     elif operator =="is not":
         return record_value != value
 
+# function to evaluate the expression for the record
 def evaluate_expression(record, column_names, where):
     if not where:
         return True
@@ -416,7 +424,7 @@ def evaluate_expression(record, column_names, where):
     if where[1]=="or":
         return evaluate_boolean(record, column_names, where[0]) or evaluate_boolean(record, column_names, where[2])
 
-
+# join function
 def select_all(myDB, table_name):
     cursor = myDB.cursor()
     records=[[] for i in range(len(table_name))]
@@ -436,7 +444,8 @@ def select_all(myDB, table_name):
         records.pop()
     return records[0]
 
-
+# convert the column name into {table_name}.{attribute} form
+# test errors
 def column_valid_test(table_name_list, metadata, columns):
     converted_columns=[]
     for column in columns:
@@ -459,6 +468,7 @@ def column_valid_test(table_name_list, metadata, columns):
                 raise Exception(f"ColumnNotExist@{column}")
     return converted_columns
 
+# filter the joined_record with where clause and projection
 def filter_record(joined_records, metadata, where, converted_columns):
     filter_records=[]
     for record in joined_records:
@@ -485,6 +495,7 @@ def select(myDB, table_name_list, select_column, where):
     
     if not select_column: select_column=metadata
 
+    # special case: {table_name}.{attribute}
     for i in range(len(where)):
         if type(where[i])==list:
             for j in range(len(where[i])-1, 0, -1):
@@ -492,6 +503,7 @@ def select(myDB, table_name_list, select_column, where):
                     where[i][j-1]=where[i][j-1]+"."+where[i][j]
                     where[i].pop(j)
 
+    ## test for errors & convert into formal form
     try:
         for x in where:
             if type(x)==list:
@@ -499,7 +511,6 @@ def select(myDB, table_name_list, select_column, where):
                 x[0] = converted_column_name[0]
                 if len(x)==3 and x[2].isalpha():
                     x[2] = column_valid_test(table_name_list, metadata, [x[2]])[0]
-
     except Exception as e:
         e = str(e).split("@")[0]
         if e == "TableNotSpecified":
