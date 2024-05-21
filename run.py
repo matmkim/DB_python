@@ -22,8 +22,8 @@ class SqlTransformer(Transformer):
     # for *_query token, return the appropriate string
     def select_query(self,items):
         
-        column_name = list( map(lambda x: ".".join(x.scan_values(lambda v: isinstance(v,Token))),  list(items[1].find_data('selected_column'))))
-        table_name =  list( map(lambda x: "".join(x.scan_values(lambda v: isinstance(v,Token))),  list(items[2].find_data('table_name'))))
+        column_name = list(map(lambda x: ".".join(x.scan_values(lambda v: isinstance(v,Token))),  list(items[1].find_data('selected_column'))))
+        table_name =  list(set(map(lambda x: "".join(x.scan_values(lambda v: isinstance(v,Token))),  list(items[2].find_data('table_name')))))
         
         where=[]
         if items[2].find_data('where_clause'):

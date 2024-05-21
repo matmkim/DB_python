@@ -54,3 +54,16 @@ delete from students where id >= '202316730' and name = "Minwoo Kim";
 delete from students where id = 100;
 delete from lectures where id = "111";
 delete from students where asd = '2023';
+
+select name from students;
+select students.name, lectures.name from students, lectures;
+select name from students, lectures;
+select asd from students, lectures;
+select lectures.id, name from lectures, ref where lectures.id = ref.id;
+select * from sasd;
+
+insert into students values ("202316729", "WhoamI");
+insert into ref values (777);
+delete from lectures where id = 333;
+
+

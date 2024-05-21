@@ -319,7 +319,7 @@ def delete(myDB, table_name, where):
     
     primary_keys = []
     primary_column = []
-    for i in range(table_column_name):
+    for i in range(len(table_column_name)):
         if key_constraint[i].startswith("PRI"):
             primary_keys.append(i)
             primary_column.append(table_column_name[i])
@@ -343,6 +343,7 @@ def delete(myDB, table_name, where):
                     target.append(key)
         if error:
             print(prompt_header+f"{cnt} row(s) are not deleted due to referential integrity")
+            return
         for key in target:
             myDB.delete(key)
     except Exception as e:
@@ -483,7 +484,14 @@ def select(myDB, table_name_list, select_column, where):
         metadata.extend(load)    
     
     if not select_column: select_column=metadata
-    
+
+    for i in range(len(where)):
+        if type(where[i])==list:
+            for j in range(len(where[i])-1, 0, -1):
+                if where[i][j][0].isalpha() and where[i][j-1][0].isalpha():
+                    where[i][j-1]=where[i][j-1]+"."+where[i][j]
+                    where[i].pop(j)
+
     try:
         for x in where:
             if type(x)==list:
@@ -506,7 +514,7 @@ def select(myDB, table_name_list, select_column, where):
         converted_columns = column_valid_test(table_name_list, metadata, select_column)
     except Exception as e:
         column = str(e).split("@")[1]
-        print(prompt_header+f"Selection has failed: fail to resolve '{column}")
+        print(prompt_header+f"Selection has failed: fail to resolve '{column}'")
     
     joined_records = select_all(myDB, table_name_list)
     try:
