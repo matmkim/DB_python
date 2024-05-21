@@ -284,17 +284,28 @@ def check_referential(myDB, primary_values, primary_column, table_name):
         if key.decode().startswith("__foreign__") and key.decode().endswith(table_name):
             ref_table.append(key.decode().split("__")[2])
     for table in ref_table:
+        metadata = load_metadata(myDB, table)
+        table_column_name = [row.split("@")[0] for row in metadata]
+        referentials = [row.split("@")[4] for row in metadata]
+        index = []
+        for attribute in primary_column:
+            index.append(referentials.index(table_name+"="+attribute))
+
         cursor = myDB.cursor()
         while x:= cursor.next():
             key,value = x
             if key.decode().split('@')[0]!= table:
                 continue
             value_decode = value.decode().split("@")
-            v_i, v_f = value_decode[ref_i], values[i]
-            if v_i[0]=="'" or v_i[0]=="\"":
-                v_i, v_f = v_i[1:-1], v_f[1:-1]
-            if v_i == v_f:
-                raise Exception("ReferentialIntegrity")
+            equal = True
+            for i in range(len(primary_values)):
+                v_i, v_f = value_decode[index[i]], primary_values[i]
+                if v_i[0]=="'" or v_i[0]=="\"":
+                    v_i, v_f = v_i[1:-1], v_f[1:-1]
+                if v_i != v_f:
+                    equal = False
+            if equal: 
+                return "ReferentialIntegrity"
     
 
 def delete(myDB, table_name, where):
@@ -316,6 +327,7 @@ def delete(myDB, table_name, where):
     target=[]
 
     f_cursor = myDB.cursor()
+    error = False
     try:
         while x:= f_cursor.next():
             key,value = x
@@ -326,8 +338,11 @@ def delete(myDB, table_name, where):
                 if evaluate_expression(value_decode, table_column_name, where):
                     cnt+=1
                     primary_values=[value_decode[i] for i in primary_keys]
-                    check_referential(myDB, primary_values, primary_column, table_name)
+                    if check_referential(myDB, primary_values, primary_column, table_name) == "ReferentialIntegrity":
+                        error = True
                     target.append(key)
+        if error:
+            print(prompt_header+f"{cnt} row(s) are not deleted due to referential integrity")
         for key in target:
             myDB.delete(key)
     except Exception as e:
