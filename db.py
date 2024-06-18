@@ -204,7 +204,6 @@ def insert(myDB, table_name, column_name_list, values):
             #InsertTypeMismatchError
             print(prompt_header+"Insertion has failed: Types are not matched")
             return 
-    
     for i in range(len(table_column_name)):
         if referentials[i]:
             ref_table, ref_attribute = referentials[i].split("=")
@@ -216,21 +215,6 @@ def insert(myDB, table_name, column_name_list, values):
             #InsertColumnNonNullableError
             print(prompt_header+f"Insertion has failed: '{table_column_name[i]}' is not nullable")
             return
-        if key_constraint[i].startswith("PRI"):
-            # check duplicate values
-            cursor = myDB.cursor()
-            while x:= cursor.next():
-                key,value = x
-                if key.decode().split('@')[0]!= table_name:
-                    continue
-                value_decode = value.decode().split("@")
-                v_i, v_f = value_decode[i], values[i]
-                if v_i[0]=="'" or v_i[0]=="\"":
-                    v_i, v_f = v_i[1:-1], v_f[1:-1]
-                if v_i == v_f:
-                    # InsertDuplicatePrimaryKeyError
-                    print(prompt_header+"Insertion has failed: Primary key duplication")
-                    return
         if key_constraint[i].endswith("FOR"):
             # check if there is the reference
             exist = False
@@ -249,6 +233,27 @@ def insert(myDB, table_name, column_name_list, values):
                 # InsertReferentialIntegrityError
                 print(prompt_header+"Insertion has failed: Referential integrity violation")
                 return
+    # check duplicate values
+    cursor = myDB.cursor()
+    while x:= cursor.next():
+        key,value = x
+        if key.decode().split('@')[0]!= table_name:
+            continue
+        value_decode = value.decode().split("@")
+        cnt, primary_cnt=0,0
+        for i in range(len(table_column_name)):
+            if key_constraint[i].startswith("PRI"):
+                primary_cnt+=1
+                v_i, v_f = value_decode[i], values[i]
+                if v_i[0]=="'" or v_i[0]=="\"":
+                    v_i, v_f = v_i[1:-1], v_f[1:-1]
+                if v_i == v_f:
+                    cnt+=1
+        if cnt == primary_cnt and cnt>0:
+            print(prompt_header+"Insertion has failed: Primary key duplication")
+            return
+
+    
         
 
     # for char type; if it is longer than the defined length, slice it
@@ -260,7 +265,7 @@ def insert(myDB, table_name, column_name_list, values):
                 print(prompt_header+"Insertion has failed: Types are not matched")
                 return
             if values[i]!="null":
-                values[i] = values[i][:int(table_column_type[i][5:-1])+1]
+                values[i] = values[i][:int(table_column_type[i][5:-1])+2]
         elif table_column_type[i]=="int":
             if '"' in values[i] or "'" in values[i] or "-" in values[i]: # not int
                 #InsertTypeMismatchError
@@ -372,12 +377,11 @@ def evaluate_boolean(record, column_names, test):
 
     if column_name not in column_names:
         raise Exception("ColumnNotExist")
-
+    
     column_i = column_names.index(column_name)
     record_value = record[column_i]
-
     # type valid tests
-    if value[0].isalpha():
+    if value[0].isalpha() and value != 'null':
         # value is the column
         column_i = column_names.index(value)
         value = record[column_i]
@@ -499,7 +503,7 @@ def select(myDB, table_name_list, select_column, where):
     for i in range(len(where)):
         if type(where[i])==list:
             for j in range(len(where[i])-1, 0, -1):
-                if where[i][j][0].isalpha() and where[i][j-1][0].isalpha():
+                if where[i][j][0].isalpha() and where[i][j-1][0].isalpha() and where[i][j] not in ['is','not','null']:
                     where[i][j-1]=where[i][j-1]+"."+where[i][j]
                     where[i].pop(j)
 
@@ -509,7 +513,7 @@ def select(myDB, table_name_list, select_column, where):
             if type(x)==list:
                 converted_column_name =  column_valid_test(table_name_list, metadata, [x[0]])
                 x[0] = converted_column_name[0]
-                if len(x)==3 and x[2].isalpha():
+                if len(x)==3 and x[2].isalpha() and x[2] not in ['is','not','null']:
                     x[2] = column_valid_test(table_name_list, metadata, [x[2]])[0]
     except Exception as e:
         e = str(e).split("@")[0]
@@ -526,7 +530,7 @@ def select(myDB, table_name_list, select_column, where):
     except Exception as e:
         column = str(e).split("@")[1]
         print(prompt_header+f"Selection has failed: fail to resolve '{column}'")
-    
+        return
     joined_records = select_all(myDB, table_name_list)
     try:
         filter_records = filter_record(joined_records, metadata, where, converted_columns)
