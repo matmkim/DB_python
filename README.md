@@ -1,7 +1,7 @@
 # DB_Python
 
 This is the project from the lecture ```Database``` in SNU.
-Implemented Datamase Management System in Python.
+Implemented Database Management System in Python.
 
 ### Development Environment
 - Python 3.12
